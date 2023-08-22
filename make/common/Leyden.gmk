@@ -1,0 +1,83 @@
+boot_java_bin = $(boot_java_home)/bin/java
+boot_java_home = $(opt)/boot-java-$(BOOT_JAVA_MAJOR)
+boot_java_version = $(BOOT_JAVA_MAJOR).$(BOOT_JAVA_MINOR).$(BOOT_JAVA_MICRO)
+configure_common_args += --disable-warnings-as-errors
+configure_common_args += --with-boot-jdk=$(boot_java_home)
+configure_common_args += --with-extra-cflags=-fcommon
+configure_common_args += --with-jvm-variants=server
+git_repo_name = leyden
+git_repo_path = $(opt)/$(git_repo_name)-$(GIT_REPO_BRANCH)
+java_bin_fastdebug = $(java_home_fastdebug)/bin/java
+java_bin_release = $(java_home_release)/bin/java
+java_home_fastdebug = $(opt)/java-leyden-fastdebug
+java_home_release = $(opt)/java-leyden
+#java_version = $(JAVA_MAJOR).$(JAVA_MINOR).$(JAVA_MICRO)
+makefile = $(git_repo_path)/Makefile
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+  arch := x64
+  download_java_home = $(opt)/jdk-$(boot_java_version)+$(BOOT_JAVA_BUILD)
+  os := linux
+endif
+ifeq ($(UNAME_S),Darwin)
+  arch := aarch64
+  download_java_home = $(opt)/jdk-$(boot_java_version)+$(BOOT_JAVA_BUILD)/Contents/Home
+  os := mac
+endif
+
+tar_name = OpenJDK$(BOOT_JAVA_MAJOR)U-jdk_$(arch)_$(os)_hotspot_$(boot_java_version)_$(BOOT_JAVA_BUILD).tar.gz
+tar_path = $(opt)/$(tar_name)
+
+all: release fastdebug
+> $(java_bin_release) --version
+> $(java_bin_fastdebug) --version
+.PHONY: all
+
+fastdebug: $(java_bin_fastdebug)
+.PHONY: fastdebug
+
+$(java_bin_fastdebug): $(boot_java_bin) $(makefile)
+> cd $(git_repo_path)
+> bash configure \
+>   $(configure_common_args) \
+>   --with-conf-name=fastdebug \
+>   --with-debug-level=fastdebug
+> make CONF=fastdebug images
+> ln -s $(git_repo_path)/build/fastdebug/images/jdk $(java_home_fastdebug)
+
+release: $(java_bin_release)
+.PHONY: release
+
+$(java_bin_release): $(boot_java_bin) $(makefile)
+> cd $(git_repo_path)
+> bash configure \
+>   $(configure_common_args) \
+>   --with-conf-name=release
+> make CONF=release images
+> ln -s $(git_repo_path)/build/release/images/jdk $(java_home_release)
+
+$(makefile):
+> git clone --depth 1 https://github.com/openjdk/$(git_repo_name) $(git_repo_path)
+
+$(boot_java_bin): $(tar_path)
+> cd $(opt)
+> tar -xzvpf $<
+> ln -s $(download_java_home) $(boot_java_home)
+> touch $@
+
+$(tar_path):
+> mkdir -p $(opt)
+> cd $(opt)
+> wget https://github.com/adoptium/temurin$(BOOT_JAVA_MAJOR)-binaries/releases/download/jdk-$(boot_java_version)%2B$(BOOT_JAVA_BUILD)/$(tar_name)
+
+clean:
+> cd $(git_repo_path) && git clean -dfx
+.PHONY: clean
+
+clean-all:
+> rm -f $(tar_path)
+> rm -f $(boot_java_home)
+> rm -drf $(git_repo_path)
+.PHONY: clean-all
+
